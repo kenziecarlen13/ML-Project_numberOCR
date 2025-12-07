@@ -6,7 +6,6 @@ import tkinter as tk
 from tkinter import filedialog
 import matplotlib.pyplot as plt
 
-# === 1. DEFINISI KELAS AI (Wajib Ada untuk Load Model) ===
 class NeuralNetworkManual:
     def __init__(self, input_size, hidden_size, output_size, learning_rate=0.1):
         self.input_size = input_size
@@ -31,12 +30,10 @@ class NeuralNetworkManual:
         A2 = self.forward(X)
         return np.argmax(A2, axis=0), np.max(A2, axis=0)
 
-# === 2. KONFIGURASI ===
-MODEL_PATH = "model\\model_dataset200.pkl" # Gunakan model terbaikmu
+
+MODEL_PATH = "model\\model_dataset200.pkl" 
 LABEL_MAP_PATH = "model\\label_map.pkl"
 IMG_SIZE = 45
-
-# === 3. FUNGSI LOGIKA UTAMA ===
 
 def load_resources():
     if not os.path.exists(MODEL_PATH) or not os.path.exists(LABEL_MAP_PATH):
@@ -50,7 +47,6 @@ def load_resources():
     with open(LABEL_MAP_PATH, "rb") as f:
         label_map = pickle.load(f)
     
-    # Balik label map (0 -> 'a')
     inv_label_map = {v: k for k, v in label_map.items()}
     return model, inv_label_map
 
@@ -58,11 +54,8 @@ def process_segment(roi, model, inv_label_map):
     """
     Menerima potongan gambar (ROI), memformat ke 45x45, dan memprediksi.
     """
-    # 1. Pastikan background hitam, huruf putih
     h, w = roi.shape
-    
-    # 2. Resize ke dalam kotak 45x45 dengan Padding (Sama seperti training)
-    # Agar proporsi tidak gepeng
+
     target_size = IMG_SIZE
     scale = min((target_size - 10) / w, (target_size - 10) / h)
     new_w, new_h = int(w * scale), int(h * scale)
@@ -70,14 +63,12 @@ def process_segment(roi, model, inv_label_map):
     if new_h < 1: new_h = 1
     
     resized = cv2.resize(roi, (new_w, new_h), interpolation=cv2.INTER_AREA)
-    
-    # Tempel ke tengah canvas hitam
+
     canvas = np.zeros((target_size, target_size), dtype=np.uint8)
     off_x = (target_size - new_w) // 2
     off_y = (target_size - new_h) // 2
     canvas[off_y:off_y+new_h, off_x:off_x+new_w] = resized
     
-    # 3. Prediksi
     img_flat = canvas.flatten() / 255.0
     input_vector = img_flat.reshape(-1, 1)
     
@@ -86,26 +77,15 @@ def process_segment(roi, model, inv_label_map):
     return char, canvas
 
 def smart_segmentation(img_binary):
-    """
-    VERSI PERBAIKAN: Lebih ramah terhadap tanda = dan -
-    """
-    # Cari semua kontur
+
     contours, _ = cv2.findContours(img_binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     
-    # Ambil Bounding Box
     boxes = []
     for c in contours:
         x, y, w, h = cv2.boundingRect(c)
-        
-        # === PERBAIKAN FILTER ===
-        # Jangan cuma cek tinggi (h). 
-        # Simpan jika:
-        # 1. Areanya lumayan besar (w*h > 20)
-        # 2. ATAU, dia lebar (w > 10) meskipun tipis (untuk tanda - dan =)
         if (w * h > 20) or (w > 8 and h > 1): 
             boxes.append((x, y, w, h))
             
-    # Urutkan berdasarkan posisi X (Kiri ke Kanan)
     boxes.sort(key=lambda b: b[0])
     
     merged_boxes = []
@@ -118,28 +98,18 @@ def smart_segmentation(img_binary):
             
         x, y, w, h = boxes[i]
         
-        # Cek apakah ini box terakhir
         if i < len(boxes) - 1:
             x2, y2, w2, h2 = boxes[i+1]
-            
-            # CEK GABUNG (MERGING)
-            # Syarat gabung:
-            # 1. Posisi X tumpang tindih (Overlap secara horizontal)
-            # 2. Jarak vertikal dekat (agar 'sama dengan' tergabung, tapi pembilang/penyebut pecahan tidak)
             
             center1 = x + w/2
             center2 = x2 + w2/2
             dist_x = abs(center1 - center2)
             
-            # Logic baru: Jika mereka segaris vertikal (pusat X-nya dekat)
+
             if dist_x < max(w, w2) * 0.5: 
-                # Cek jarak vertikal (gap)
-                # Tanda '=' biasanya gap-nya kecil. Pecahan gap-nya besar.
-                gap = y2 - (y + h) # asumsi y2 ada di bawah y
+                gap = y2 - (y + h) 
                 
-                # Jika gap tidak terlalu jauh (maksimal 2x tinggi huruf)
-                if gap < 30: # Threshold jarak vertikal aman
-                    # GABUNGKAN!
+                if gap < 30:
                     min_x = min(x, x2)
                     min_y = min(y, y2)
                     max_x = max(x+w, x2+w2)
@@ -154,20 +124,16 @@ def smart_segmentation(img_binary):
     return merged_boxes
 
 def solve_image(image_path, model, inv_label_map):
-    # 1. Load & Preprocessing
     img_original = cv2.imread(image_path)
     if img_original is None: return
     
     gray = cv2.cvtColor(img_original, cv2.COLOR_BGR2GRAY)
     
-    # Inversi jika background putih (kertas)
     if np.mean(gray) > 127:
         gray = cv2.bitwise_not(gray)
         
-    # Thresholding
     _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
     
-    # 2. Segmentasi Cerdas
     boxes = smart_segmentation(thresh)
     
     full_text = ""
@@ -176,16 +142,12 @@ def solve_image(image_path, model, inv_label_map):
     print("-" * 30)
     print(f"Terdeteksi {len(boxes)} karakter/simbol.")
     
-    # 3. Loop Prediksi per Karakter
     for (x, y, w, h) in boxes:
-        # Crop ROI (Region of Interest)
         roi = thresh[y:y+h, x:x+w]
         
-        # Prediksi
         char, processed_img = process_segment(roi, model, inv_label_map)
         full_text += char
-        
-        # Visualisasi (Gambar Kotak & Teks)
+
         color = (0, 255, 0)
         cv2.rectangle(annotated_img, (x, y), (x+w, y+h), color, 2)
         cv2.putText(annotated_img, char, (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
@@ -194,7 +156,6 @@ def solve_image(image_path, model, inv_label_map):
 
     return full_text, annotated_img, thresh
 
-# === 4. GUI UTAMA ===
 def main():
     model, inv_label_map = load_resources()
     if model is None: return
@@ -212,12 +173,11 @@ def main():
         
         print(f"Memproses: {os.path.basename(file_path)}")
         
-        # Jalankan Solver
+
         hasil_teks, gambar_hasil, gambar_biner = solve_image(file_path, model, inv_label_map)
         
         print(f"\n>> HASIL PEMBACAAN: {hasil_teks}")
-        
-        # Tampilkan Hasil
+
         plt.figure(figsize=(10, 5))
         
         plt.subplot(1, 2, 1)
