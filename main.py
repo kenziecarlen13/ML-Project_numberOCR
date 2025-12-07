@@ -2,11 +2,14 @@ import cv2
 import numpy as np
 import pickle
 import os
+import sys
 import tkinter as tk
 from tkinter import filedialog
-import matplotlib.pyplot as plt
+import re
+# import sympy
 
-# === 1. DEFINISI KELAS AI (Wajib Ada untuk Load Model) ===
+from sympy import symbols, Eq, solve, sympify, N
+
 class NeuralNetworkManual:
     def __init__(self, input_size, hidden_size, output_size, learning_rate=0.1):
         self.input_size = input_size
@@ -31,209 +34,216 @@ class NeuralNetworkManual:
         A2 = self.forward(X)
         return np.argmax(A2, axis=0), np.max(A2, axis=0)
 
-# === 2. KONFIGURASI ===
-MODEL_PATH = "model\\model_dataset200.pkl" # Gunakan model terbaikmu
-LABEL_MAP_PATH = "model\\label_map.pkl"
-IMG_SIZE = 45
 
-# === 3. FUNGSI LOGIKA UTAMA ===
+def fix_syntax_math(text):
+    """
+    Memperbaiki format string agar bisa dibaca SymPy.
+    1. Mengubah 'x' di antara dua angka menjadi '*' (2x6 -> 2*6)
+    2. Menambah tanda * implisit (2x -> 2*x)
+    """
+
+    # ngubah x => menjadi * menggunakan regex
+    text = re.sub(r'(\d)x(\d)', r'\1*\2', text)
+    
+    new_text = ""
+    i = 0
+    while i < len(text):
+        char = text[i]
+        if char.isalpha():
+            if i > 0:
+                prev_char = text[i-1]
+                if prev_char.isdigit() or prev_char == ')':
+                    new_text += "*"
+            new_text += char
+        else:
+            new_text += char
+        i += 1
+    return new_text
+
+def calculate_math(equation_str):
+
+    try:
+        raw_eq = equation_str.replace(" ", "").lower()
+        processed_eq = fix_syntax_math(raw_eq) 
+
+        if "=" not in processed_eq:
+            expr = sympify(processed_eq)
+            result = expr.evalf()
+            if float(result).is_integer():
+                return str(int(result))
+            else:
+                return f"{float(result):.4f}"
+
+        else:
+            lhs_str, rhs_str = processed_eq.split("=")
+            lhs = sympify(lhs_str)
+            rhs = sympify(rhs_str)
+            equation = Eq(lhs, rhs)
+            
+            free_vars = list(equation.free_symbols)
+            if not free_vars:
+                return "Benar" if lhs == rhs else "Salah"
+            
+            target_var = free_vars[0]
+            solution = solve(equation, target_var)
+            
+            if not solution: return "Tidak ada solusi"
+            
+            final_ans = solution[0]
+            res_val = N(final_ans)
+            
+            if float(res_val).is_integer():
+                ans_str = str(int(res_val))
+            else:
+                ans_str = f"{float(res_val):.2f}"
+                
+            return f"{target_var} = {ans_str}"
+
+    except Exception as e:
+        return "Error Syntax"
+    
+# MODEL_PATH = r"model\model_dataset100.pkl" 
+# MODEL_PATH = r"model\model_dataset200.pkl" 
+MODEL_PATH = r"model\model_dataset300.pkl" 
+LABEL_MAP_PATH = r"model\label_map.pkl"
+IMG_SIZE = 45
 
 def load_resources():
     if not os.path.exists(MODEL_PATH) or not os.path.exists(LABEL_MAP_PATH):
-        print("ERROR: Model atau Label Map tidak ditemukan!")
+        print(f"[!] ERROR: File model tidak ditemukan di: {MODEL_PATH}")
         return None, None
-    
-    print(f"Loading {MODEL_PATH}...")
-    with open(MODEL_PATH, "rb") as f:
-        model = pickle.load(f)
-        
-    with open(LABEL_MAP_PATH, "rb") as f:
-        label_map = pickle.load(f)
-    
-    # Balik label map (0 -> 'a')
-    inv_label_map = {v: k for k, v in label_map.items()}
-    return model, inv_label_map
+    try:
+        with open(MODEL_PATH, "rb") as f: model = pickle.load(f)
+        with open(LABEL_MAP_PATH, "rb") as f: label_map = pickle.load(f)
+        inv_label_map = {v: k for k, v in label_map.items()}
+        return model, inv_label_map
+    except Exception as e:
+        print(f"[!] Gagal load model: {e}")
+        return None, None
+
+def post_process_text(text):
+    """Auto-Correct Typo"""
+    corrections = {
+        "sln": "sin", "s1n": "sin", "5in": "sin", "sjn": "sin",
+        "c0s": "cos", "co5": "cos", "cas": "cos", "ccs": "cos",
+        "t0n": "tan", "lan": "tan", "1an": "tan", "ton": "tan",
+        "l0g": "log", "1og": "log", "iog": "log", "log": "log",
+        "x": "x" 
+    }
+    for typo, correct in corrections.items():
+        text = text.replace(typo, correct)
+    return text
 
 def process_segment(roi, model, inv_label_map):
-    """
-    Menerima potongan gambar (ROI), memformat ke 45x45, dan memprediksi.
-    """
-    # 1. Pastikan background hitam, huruf putih
     h, w = roi.shape
-    
-    # 2. Resize ke dalam kotak 45x45 dengan Padding (Sama seperti training)
-    # Agar proporsi tidak gepeng
-    target_size = IMG_SIZE
-    scale = min((target_size - 10) / w, (target_size - 10) / h)
+    scale = min((IMG_SIZE - 10) / w, (IMG_SIZE - 10) / h)
     new_w, new_h = int(w * scale), int(h * scale)
     if new_w < 1: new_w = 1
     if new_h < 1: new_h = 1
-    
     resized = cv2.resize(roi, (new_w, new_h), interpolation=cv2.INTER_AREA)
-    
-    # Tempel ke tengah canvas hitam
-    canvas = np.zeros((target_size, target_size), dtype=np.uint8)
-    off_x = (target_size - new_w) // 2
-    off_y = (target_size - new_h) // 2
+    canvas = np.zeros((IMG_SIZE, IMG_SIZE), dtype=np.uint8)
+    off_x, off_y = (IMG_SIZE - new_w) // 2, (IMG_SIZE - new_h) // 2
     canvas[off_y:off_y+new_h, off_x:off_x+new_w] = resized
-    
-    # 3. Prediksi
     img_flat = canvas.flatten() / 255.0
     input_vector = img_flat.reshape(-1, 1)
-    
-    idx, conf = model.predict(input_vector)
-    char = inv_label_map.get(int(idx[0]), "?")
-    return char, canvas
+    idx, _ = model.predict(input_vector)
+    return inv_label_map.get(int(idx[0]), "?")
 
 def smart_segmentation(img_binary):
-    """
-    VERSI PERBAIKAN: Lebih ramah terhadap tanda = dan -
-    """
-    # Cari semua kontur
     contours, _ = cv2.findContours(img_binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    
-    # Ambil Bounding Box
     boxes = []
     for c in contours:
         x, y, w, h = cv2.boundingRect(c)
-        
-        # === PERBAIKAN FILTER ===
-        # Jangan cuma cek tinggi (h). 
-        # Simpan jika:
-        # 1. Areanya lumayan besar (w*h > 20)
-        # 2. ATAU, dia lebar (w > 10) meskipun tipis (untuk tanda - dan =)
         if (w * h > 20) or (w > 8 and h > 1): 
             boxes.append((x, y, w, h))
-            
-    # Urutkan berdasarkan posisi X (Kiri ke Kanan)
     boxes.sort(key=lambda b: b[0])
     
     merged_boxes = []
     skip_next = False
-    
     for i in range(len(boxes)):
         if skip_next:
             skip_next = False
             continue
-            
         x, y, w, h = boxes[i]
-        
-        # Cek apakah ini box terakhir
         if i < len(boxes) - 1:
             x2, y2, w2, h2 = boxes[i+1]
-            
-            # CEK GABUNG (MERGING)
-            # Syarat gabung:
-            # 1. Posisi X tumpang tindih (Overlap secara horizontal)
-            # 2. Jarak vertikal dekat (agar 'sama dengan' tergabung, tapi pembilang/penyebut pecahan tidak)
-            
-            center1 = x + w/2
-            center2 = x2 + w2/2
-            dist_x = abs(center1 - center2)
-            
-            # Logic baru: Jika mereka segaris vertikal (pusat X-nya dekat)
-            if dist_x < max(w, w2) * 0.5: 
-                # Cek jarak vertikal (gap)
-                # Tanda '=' biasanya gap-nya kecil. Pecahan gap-nya besar.
-                gap = y2 - (y + h) # asumsi y2 ada di bawah y
-                
-                # Jika gap tidak terlalu jauh (maksimal 2x tinggi huruf)
-                if gap < 30: # Threshold jarak vertikal aman
-                    # GABUNGKAN!
-                    min_x = min(x, x2)
-                    min_y = min(y, y2)
-                    max_x = max(x+w, x2+w2)
-                    max_y = max(y+h, y2+h2)
-                    
+            center1, center2 = x + w/2, x2 + w2/2
+            if abs(center1 - center2) < max(w, w2) * 0.5: 
+                gap = y2 - (y + h)
+                if gap < 30: 
+                    min_x, min_y = min(x, x2), min(y, y2)
+                    max_x, max_y = max(x+w, x2+w2), max(y+h, y2+h2)
                     merged_boxes.append((min_x, min_y, max_x - min_x, max_y - min_y))
                     skip_next = True
                     continue
-        
         merged_boxes.append((x, y, w, h))
-        
     return merged_boxes
 
-def solve_image(image_path, model, inv_label_map):
-    # 1. Load & Preprocessing
-    img_original = cv2.imread(image_path)
-    if img_original is None: return
-    
-    gray = cv2.cvtColor(img_original, cv2.COLOR_BGR2GRAY)
-    
-    # Inversi jika background putih (kertas)
-    if np.mean(gray) > 127:
-        gray = cv2.bitwise_not(gray)
-        
-    # Thresholding
+def solve_image_ocr(image_path, model, inv_label_map):
+    img = cv2.imread(image_path)
+    if img is None: return None
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    if np.mean(gray) > 127: gray = cv2.bitwise_not(gray)
     _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
     
-    # 2. Segmentasi Cerdas
     boxes = smart_segmentation(thresh)
-    
     full_text = ""
-    annotated_img = img_original.copy()
-    
-    print("-" * 30)
-    print(f"Terdeteksi {len(boxes)} karakter/simbol.")
-    
-    # 3. Loop Prediksi per Karakter
     for (x, y, w, h) in boxes:
-        # Crop ROI (Region of Interest)
         roi = thresh[y:y+h, x:x+w]
-        
-        # Prediksi
-        char, processed_img = process_segment(roi, model, inv_label_map)
+        char = process_segment(roi, model, inv_label_map)
         full_text += char
-        
-        # Visualisasi (Gambar Kotak & Teks)
-        color = (0, 255, 0)
-        cv2.rectangle(annotated_img, (x, y), (x+w, y+h), color, 2)
-        cv2.putText(annotated_img, char, (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
-        
-        print(f"Posisi: {x},{y} | Prediksi: {char}")
+    return post_process_text(full_text)
 
-    return full_text, annotated_img, thresh
-
-# === 4. GUI UTAMA ===
 def main():
-    model, inv_label_map = load_resources()
-    if model is None: return
+    print("\n" + "="*40)
+    print("   SMART MATH SOLVER (LITE)")
+    print("="*40 + "\n")
 
+    model, inv_label_map = load_resources()
+    if model is None: 
+        input("Tekan Enter untuk menutup...")
+        return
+
+    print("[+] System Ready.")
+    
     root = tk.Tk()
     root.withdraw()
+    root.attributes('-topmost', True)
 
     while True:
-        print("\n--- PILIH GAMBAR RUMUS ---")
+        # print("\n>>> Menunggu input gambar...")
         file_path = filedialog.askopenfilename(
-            title="Pilih Gambar Rumus Matematika",
-            filetypes=[("Image Files", "*.png;*.jpg;*.jpeg")]
+            parent=root,
+            title="Pilih Gambar",
+            filetypes=[("Image Files", "*.png;*.jpg;*.jpeg;*.bmp")]
         )
-        if not file_path: break
-        
-        print(f"Memproses: {os.path.basename(file_path)}")
-        
-        # Jalankan Solver
-        hasil_teks, gambar_hasil, gambar_biner = solve_image(file_path, model, inv_label_map)
-        
-        print(f"\n>> HASIL PEMBACAAN: {hasil_teks}")
-        
-        # Tampilkan Hasil
-        plt.figure(figsize=(10, 5))
-        
-        plt.subplot(1, 2, 1)
-        plt.title("Input (Binary)")
-        plt.imshow(gambar_biner, cmap='gray')
-        plt.axis('off')
-        
-        plt.subplot(1, 2, 2)
-        plt.title(f"Hasil: {hasil_teks}")
-        plt.imshow(cv2.cvtColor(gambar_hasil, cv2.COLOR_BGR2RGB))
-        plt.axis('off')
-        
-        plt.show()
-        
-        lagi = input("Coba gambar lain? (y/n): ")
-        if lagi.lower() != 'y': break
+
+        if not file_path:
+            print("[!] Batal. Keluar.")
+            break
+
+        try:
+            # 1. OCR
+            soal_teks = solve_image_ocr(file_path, model, inv_label_map)
+            
+            if not soal_teks:
+                print("    [!] Gagal baca gambar.")
+                continue
+
+            jawaban = calculate_math(soal_teks)
+
+            print("-" * 30)
+            print(f"SOAL   : {soal_teks}")
+            print(f"JAWAB  : {jawaban}")
+            print("-" * 30)
+
+        except Exception as e:
+            print(f"[!] Error: {e}")
+
+        lagi = input("Lagi? (y/n): ").lower()
+        if lagi != 'y': break
+    
+    root.destroy()
 
 if __name__ == "__main__":
     main()

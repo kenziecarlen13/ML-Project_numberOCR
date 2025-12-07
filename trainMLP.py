@@ -3,25 +3,22 @@ import cv2
 import os
 import csv
 import matplotlib.pyplot as plt
-import pickle  # <--- Modul untuk menyimpan model
+import pickle  
 
-# === KONFIGURASI ===
 IMG_SIZE = 45
-INPUT_NEURONS = IMG_SIZE * IMG_SIZE  # 2025
+INPUT_NEURONS = IMG_SIZE * IMG_SIZE  
 HIDDEN_NEURONS = 128
 OUTPUT_NEURONS = 26 
 
-DATASETS = ["dataset100", "dataset200", "dataset300"] 
+DATASETS = ["dataset100", "dataset200", "dataset300"] #langsung train 3 model untuk 3 dataset
 
-# === CLASS NEURAL NETWORK ===
 class NeuralNetworkManual:
     def __init__(self, input_size, hidden_size, output_size, learning_rate=0.1):
         self.input_size = input_size
         self.hidden_size = hidden_size
         self.output_size = output_size
         self.learning_rate = learning_rate
-        
-        # He Initialization
+
         np.random.seed(42)
         self.W1 = np.random.randn(self.hidden_size, self.input_size) * np.sqrt(2. / self.input_size)
         self.b1 = np.zeros((self.hidden_size, 1))
@@ -78,7 +75,6 @@ class NeuralNetworkManual:
         
         return loss_history
     
-    # Fungsi bantu untuk menyimpan bobot saja (opsional, tapi pickle lebih mudah)
     def save_weights(self, filename):
         np.savez(filename, W1=self.W1, b1=self.b1, W2=self.W2, b2=self.b2)
         print(f"   Model disimpan ke {filename}")
@@ -123,21 +119,15 @@ def load_data(folder_path, csv_filename="labels.csv"):
     X = np.array(images).T
     return X, labels_raw
 
-# ==========================================
-# EKSEKUSI UTAMA
-# ==========================================
 
 plt.figure(figsize=(12, 7))
 results = {}
 
-# Buat Label Mapping dari dataset terbesar
-print("Mempersiapkan Label Encoder...")
 _, sample_labels = load_data("dataset300") 
 if sample_labels:
     unique_labels = sorted(list(set(sample_labels)))
     label_map = {label: i for i, label in enumerate(unique_labels)}
     
-    # SIMPAN LABEL MAP JUGA! (Penting agar saat load model nanti tidak tertukar)
     with open("label_map.pkl", "wb") as f:
         pickle.dump(label_map, f)
     print(f"Label Map disimpan ke 'label_map.pkl'")
@@ -153,21 +143,17 @@ for ds_name in DATASETS:
     
     y_indices = [label_map[lbl] for lbl in y_raw]
     print(f"Jumlah Data: {X.shape[1]}")
-    
-    # Reset Model
+
     nn = NeuralNetworkManual(INPUT_NEURONS, HIDDEN_NEURONS, OUTPUT_NEURONS, learning_rate=0.05)
     
-    # Train
     history = nn.train_with_history(X, y_indices, epochs=1500)
     results[ds_name] = history
     
-    # === SIMPAN MODEL KE FILE ===
     filename = f"model_{ds_name}.pkl"
     with open(filename, 'wb') as f:
         pickle.dump(nn, f)
-    print(f"✅ SUKSES: Model tersimpan di '{filename}'")
+    print(f"Saved Model: '{filename}'")
     
-    # Plot
     plt.plot(history, label=f"Model ({ds_name}) - Final Loss: {history[-1]:.4f}", linewidth=2)
 
 plt.title(f"Perbandingan Training Loss (Disimpan ke File .pkl)")
