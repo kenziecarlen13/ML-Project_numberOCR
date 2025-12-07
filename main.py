@@ -36,12 +36,6 @@ class NeuralNetworkManual:
 
 
 def fix_syntax_math(text):
-    """
-    Memperbaiki format string agar bisa dibaca SymPy.
-    1. Mengubah 'x' di antara dua angka menjadi '*' (2x6 -> 2*6)
-    2. Menambah tanda * implisit (2x -> 2*x)
-    """
-
     # ngubah x => menjadi * menggunakan regex
     text = re.sub(r'(\d)x(\d)', r'\1*\2', text)
     
