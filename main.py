@@ -98,17 +98,17 @@ def calculate_math(equation_str):
 
 
 #IndieFlower-regular.ttf (font yang digunakan di model)
-# MODEL_PATH = r"model\\model1\\model_dataset100.pkl"
-# MODEL_PATH = r"model\\model1\\model_dataset200.pkl" 
-MODEL_PATH = r"model\\model1\\model_dataset300.pkl" 
+# MODEL_PATH = r"model\\model1\\IF-100.pkl"
+# MODEL_PATH = r"model\\model1\\IF-200.pkl" 
+MODEL_PATH = r"model\\model1\\IF-300.pkl" 
 LABEL_MAP_PATH = r"model\\model1\\label_map.pkl"
 
 
 #PatrickHand-regular.ttf (font yang digunakan di model)
 
-# MODEL_PATH = r"model\\model2\\model_dataset100.pkl"
-# MODEL_PATH = r"model\\model2\\model_dataset200.pkl" 
-# MODEL_PATH = r"model\\model2\\model_dataset300.pkl" 
+# MODEL_PATH = r"model\\model2\\PH-100.pkl"
+# MODEL_PATH = r"model\\model2\\PH-200.pkl" 
+# MODEL_PATH = r"model\\model2\\PH-300.pkl" 
 # LABEL_MAP_PATH = r"model\\model2\\label_map.pkl"
 
 
