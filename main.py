@@ -95,11 +95,23 @@ def calculate_math(equation_str):
 
     except Exception as e:
         return "Error Syntax"
-    
-# MODEL_PATH = r"model\model_dataset100.pkl" 
-# MODEL_PATH = r"model\model_dataset200.pkl" 
-MODEL_PATH = r"model\model_dataset300.pkl" 
-LABEL_MAP_PATH = r"model\label_map.pkl"
+
+
+#IndieFlower-regular.ttf (font yang digunakan di model)
+# MODEL_PATH = r"model\\model1\\model_dataset100.pkl"
+# MODEL_PATH = r"model\\model1\\model_dataset200.pkl" 
+MODEL_PATH = r"model\\model1\\model_dataset300.pkl" 
+LABEL_MAP_PATH = r"model\\model1\\label_map.pkl"
+
+
+#PatrickHand-regular.ttf (font yang digunakan di model)
+
+# MODEL_PATH = r"model\\model2\\model_dataset100.pkl"
+# MODEL_PATH = r"model\\model2\\model_dataset200.pkl" 
+# MODEL_PATH = r"model\\model2\\model_dataset300.pkl" 
+# LABEL_MAP_PATH = r"model\\model2\\label_map.pkl"
+
+
 IMG_SIZE = 45
 
 def load_resources():
