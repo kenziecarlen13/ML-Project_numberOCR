@@ -7,8 +7,8 @@ import tkinter as tk
 from tkinter import filedialog
 import re
 # import sympy
-
-from sympy import symbols, Eq, solve, sympify, N
+# from sympy import symbols, Eq, solve, sympify, N, rad
+from sympy import symbols, Eq, solve, sympify, N, rad
 
 class NeuralNetworkManual:
     def __init__(self, input_size, hidden_size, output_size, learning_rate=0.1):
@@ -36,9 +36,21 @@ class NeuralNetworkManual:
 
 
 def fix_syntax_math(text):
-    # ngubah x => menjadi * menggunakan regex
+    """
+    1. Mengubah 'x' di antara dua angka menjadi '*' (2x6 -> 2*6)
+    2. Mengubah sudut derajat ke radian otomatis (sin(30) -> sin(rad(30)))
+    3. Menambah tanda * implisit (2x -> 2*x)
+    """
+    # 1. Ubah perkalian 'x' (Angka-x-Angka) jadi '*'
+    # Contoh: 2x6 -> 2*6
     text = re.sub(r'(\d)x(\d)', r'\1*\2', text)
     
+    # 2. Ubah Sudut Derajat ke Radian untuk Trigonometri
+    # Agar sin(30) dihitung sebagai 0.5 (derajat), bukan -0.98 (radian)
+    # Regex menangkap: sin/cos/tan diikuti angka dalam kurung
+    text = re.sub(r'(sin|cos|tan)\((-?[\d.]+)\)', r'\1(rad(\2))', text)
+
+    # 3. Fix syntax variabel / implicit multiplication (2x -> 2*x)
     new_text = ""
     i = 0
     while i < len(text):
@@ -46,6 +58,8 @@ def fix_syntax_math(text):
         if char.isalpha():
             if i > 0:
                 prev_char = text[i-1]
+                # Jika sebelumnya adalah ANGKA atau KURUNG TUTUP
+                # Contoh: 2a -> 2*a, (5)x -> (5)*x
                 if prev_char.isdigit() or prev_char == ')':
                     new_text += "*"
             new_text += char
@@ -55,19 +69,23 @@ def fix_syntax_math(text):
     return new_text
 
 def calculate_math(equation_str):
-
     try:
         raw_eq = equation_str.replace(" ", "").lower()
         processed_eq = fix_syntax_math(raw_eq) 
 
+        # === KASUS 1: Ekspresi Tanpa Sama Dengan (17+5) ===
         if "=" not in processed_eq:
             expr = sympify(processed_eq)
             result = expr.evalf()
-            if float(result).is_integer():
-                return str(int(result))
+            
+            # Cek apakah integer (dengan toleransi error floating point)
+            # Contoh: 4.999999999 akan dianggap 5
+            if abs(result - round(result)) < 1e-9:
+                return str(int(round(result)))
             else:
                 return f"{float(result):.4f}"
 
+        # === KASUS 2: Persamaan Linear (2x+5=10) ===
         else:
             lhs_str, rhs_str = processed_eq.split("=")
             lhs = sympify(lhs_str)
@@ -75,9 +93,12 @@ def calculate_math(equation_str):
             equation = Eq(lhs, rhs)
             
             free_vars = list(equation.free_symbols)
+            
+            # Jika tidak ada variabel (misal: 5=5)
             if not free_vars:
                 return "Benar" if lhs == rhs else "Salah"
             
+            # Ambil variabel target (x, y, dll)
             target_var = free_vars[0]
             solution = solve(equation, target_var)
             
@@ -86,14 +107,16 @@ def calculate_math(equation_str):
             final_ans = solution[0]
             res_val = N(final_ans)
             
-            if float(res_val).is_integer():
-                ans_str = str(int(res_val))
+            # Cek integer untuk hasil persamaan
+            if abs(res_val - round(res_val)) < 1e-9:
+                ans_str = str(int(round(res_val)))
             else:
                 ans_str = f"{float(res_val):.2f}"
                 
             return f"{target_var} = {ans_str}"
 
     except Exception as e:
+        # print(f"Debug Error: {e}") # Uncomment untuk debugging
         return "Error Syntax"
 
 
